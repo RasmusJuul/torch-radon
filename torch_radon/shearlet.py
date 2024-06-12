@@ -22,6 +22,7 @@ class ShearletTransform:
     .. note::
         Support both float and double precision.
     """
+
     def __init__(self, width, height, alphas, cache=None):
         cache_name = f"{width}_{height}_{alphas}.npy"
         if cache is not None:
@@ -37,11 +38,8 @@ class ShearletTransform:
                 np.save(cache_file, shifted_spectrograms)
         else:
             alpha_shearlet = AlphaShearletTransform(width, height, alphas, real=True, parseval=True)
-            scales = [0] + [x[0] for x in alpha_shearlet.indices[1:]]
-            self.scales = np.asarray(scales)
             shifted_spectrograms = np.asarray([my_ifft_shift(spec) for spec in alpha_shearlet.spectrograms])
 
-        self.scales = torch.FloatTensor(self.scales)
         self.shifted_spectrograms = torch.FloatTensor(shifted_spectrograms)
 
         self.shifted_spectrograms_d = torch.DoubleTensor(shifted_spectrograms)
@@ -62,14 +60,15 @@ class ShearletTransform:
         """
         self._move_parameters_to_device(x.device)
 
-        c = torch.rfft(x, 2, normalized=True, onesided=False)
+        c = torch.fft.rfft(x, 2, norm="forward")
+        print(self.shifted_spectrograms.size(), c.size())
 
         if x.dtype == torch.float64:
             cs = torch.einsum("fij,bijc->bfijc", self.shifted_spectrograms_d, c)
         else:
             cs = torch.einsum("fij,bijc->bfijc", self.shifted_spectrograms, c)
 
-        return torch.irfft(cs, 2, normalized=True, onesided=False)
+        return torch.fft.irfft(cs, 2, norm="forward")
 
     @normalize_shape(3)
     def backward(self, cs):
@@ -82,11 +81,13 @@ class ShearletTransform:
             Has shape :math:`(d_1, \\dots, d_n, h, w)`.
         """
 
-        cs_fft = torch.rfft(cs, 2, normalized=True, onesided=False)
+        cs_fft = torch.fft.rfft(cs, 2, norm="forward")
+        print(self.shifted_spectrograms.size(), cs_fft.size())
 
         if cs.dtype == torch.float64:
             res = torch.einsum("fij,bfijc->bijc", self.shifted_spectrograms_d, cs_fft)
         else:
+            print(self.shifted_spectrograms.size(), cs_fft.size())
             res = torch.einsum("fij,bfijc->bijc", self.shifted_spectrograms, cs_fft)
 
-        return torch.irfft(res, 2, normalized=True, onesided=False)
+        return torch.fft.irfft(res, 2, norm="forward")
